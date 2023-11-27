@@ -1,131 +1,138 @@
-import process from 'node:process';
-import blessed from 'blessed';
-import { io } from 'socket.io-client';
-import { hostname } from 'node:os';
-
-const USER_MESSAGE = 1;
-const SYSTEM_MESSAGE = 2;
-const CHAT_INIT = 3;
-const COMMAND_MESSAGE = 4;
+import { input, output, refreshScreen, screen } from './cli.js';
+import { socket } from './socket.js';
+import { AuthMessageTypes, ChatEvents, CommandMessageTypes, SystemMessageTypes } from '../events/ChatEvents.js';
+import chalk from 'chalk';
+// import { hostname } from 'node:os';
 
 let counter = 1;
+let username = null;
 
-// web socket
-const socket = io('http://localhost:3000/', { ackTimeout: 10000, retries: 3 });
-let username = hostname();
+socket.on(ChatEvents.AUTH_MESSAGE, authHandler);
 
-socket.emit(CHAT_INIT, { id: username, timestamp: new Date().toDateString() });
-
-// blessed-screen
-const screen = blessed.screen({
-	smartCSR: true,
-	title: 'Split Terminal',
-});
-
-// messages-output
-const output = blessed.list({
-	top: 0,
-	left: 0,
-	width: '100%',
-	height: '80%',
-	tags: true,
-	border: {
-		type: 'line',
-	},
-	style: {
-		fg: 'white',
-		border: {
-			fg: '#f0f0f0',
-		},
-	},
-});
-
-// text-input
-const input = blessed.textbox({
-	bottom: 0,
-	left: 0,
-	width: '100%',
-	height: '20%',
-	inputOnFocus: true,
-	border: {
-		type: 'line',
-	},
-	style: {
-		fg: 'white',
-		border: {
-			fg: '#f0f0f0',
-		},
-	},
-});
-
-function initScreen() {
-	// Append the boxes to the screen
-	screen.append(output);
-	screen.append(input);
-	// Focus on the input box by default
-	input.focus();
-	// Add welcome message
-	output.addItem('Welcome to my chat-app!');
-	// Event handler for Ctrl+C to exit the program
-	screen.key(['C-c'], () => {
-		return process.exit(0);
-	});
-	input.key(['C-c'], () => {
-		return process.exit(0);
-	});
-	// Render the screen
-	screen.render();
+function authHandler(status, mUsername) {
+	if (status === true) {
+		username = mUsername;
+		addAllListeners();
+		output.clearItems();
+		output.addItem(chalk.bold.bgBlue('Welcome to epic-chat'));
+		refreshScreen();
+		socket.emit(ChatEvents.CHAT_INIT, { username: username, timestamp: new Date().toDateString() });
+	}
+	if (status === false) {
+		socket.removeAllListeners();
+		output.add('Invalid login. This user is already logged in');
+		refreshScreen();
+		socket.on(ChatEvents.AUTH_MESSAGE, authHandler);
+	}
 }
 
-initScreen();
+function addAllListeners() {
+	// on-user-message-received
+	socket.on(ChatEvents.USER_MESSAGE, (message) => {
+		output.addItem(convertMessageToString(message));
+		screen.render();
+	});
 
-// on-user-message-received
-socket.on(USER_MESSAGE, (message) => {
-	output.addItem(convertMessageToString(message));
-	screen.render();
-});
-
-// on-system-message-received
-socket.on(SYSTEM_MESSAGE, (message, user) => {
-	const textContent = createSystemMessage(message, user);
-	output.addItem(textContent);
-});
-
-socket.on(COMMAND_MESSAGE, (command, args) => {
-	if (command === 'USERNAME_CHANGE') {
-		const [previousName, newName] = args;
-		const textContent = `${previousName} changed name to ${newName}`;
-		username = newName;
+	// on-system-message-received
+	socket.on(ChatEvents.SYSTEM_MESSAGE, (message, args) => {
+		const textContent = createSystemMessage(message, args);
 		output.addItem(textContent);
 		screen.render();
-	}
-});
+	});
 
+	//on-command-message-received
+	socket.on(ChatEvents.COMMAND_MESSAGE, (command) => {
+		switch (command.type) {
+			case CommandMessageTypes.USERNAME_CHANGE:
+				username = command.newName;
+				break;
+
+			case CommandMessageTypes.CLEAR_CHAT:
+				output.clearItems();
+				break;
+
+			case CommandMessageTypes.INVALID_COMMAND:
+				output.addItem('Invalid command');
+				break;
+
+			default:
+				output.addItem('Invalid command');
+				break;
+		}
+		refreshScreen();
+	});
+}
 // socket.on(CHAT_INIT, (user) => {});
 
-// on-message-send
-input.key('enter', () => {
+// on-user-press-enter
+// main method where all user input is handled
+input.key('enter', inputHandler);
+
+async function inputHandler() {
 	const userInput = input.getValue();
-	if (!userInput) {
+
+	// do nothing if enter pressed on empty input
+	if (!userInput) return;
+
+	if (socket.disconnected) {
+		input.clearValue();
+		output.addItem('No server connection.');
+		// for (let i = 1; i < 5; i++) {
+		// 	output.addItem(`Trying to establish connection with the server (${i}).`);
+		// 	socket.connect();
+		// 	if (socket.connected) {
+		// 		return inputHandler();
+		// 	}
+		// 	await sleep(5000);
+		// }
+		output.addItem('Server unreachable.');
+		refreshScreen();
 		return;
-	} else if (userInput.startsWith('/')) {
-		const userInputArray = userInput.split(' ');
-		if (userInputArray.length < 2) return;
-		const command = userInputArray[0];
-		const args = [...userInputArray];
-		args.shift();
-		socket.emit(COMMAND_MESSAGE, command, args);
-	} else {
-		const message = createUserMessage(userInput);
-		output.addItem(convertMessageToString(message));
-		socket.emit(USER_MESSAGE, message);
 	}
 
-	// UI related
-	input.clearValue();
-	input.focus();
-	screen.render();
-});
+	// check if the user input is a command
+	if (userInput.startsWith('/')) {
+		// check for login command
+		if (userInput.startsWith('/login')) {
+			if (username !== null) {
+				output.addItem('You are already logged in as ${username}');
+				refreshScreen();
+				return;
+			}
+			const mUsername = userInput.split(' ')[1];
+			socket.emit(ChatEvents.AUTH_MESSAGE, AuthMessageTypes.LOGIN, mUsername);
+			return;
+		}
+
+		// check for logout
+		if (userInput.startsWith('/logout')) {
+			if (username === null) {
+				output.addItem('Not logged in');
+				refreshScreen();
+				return;
+			}
+			socket.emit(ChatEvents.AUTH_MESSAGE, AuthMessageTypes.LOGOUT);
+			return;
+		}
+
+		const command = userInput;
+		socket.emit(ChatEvents.COMMAND_MESSAGE, command);
+		return;
+	}
+
+	if (username === null) {
+		output.addItem('You need to be logged in to send messages.');
+		refreshScreen();
+		return;
+	}
+
+	// socket.emit(ChatEvents.CHAT_INIT, { username: username, timestamp: new Date().toDateString() })
+	const message = createUserMessage(userInput);
+	output.addItem(convertMessageToString(message));
+	socket.emit(ChatEvents.USER_MESSAGE, message);
+
+	refreshScreen();
+}
 
 /**
  * Method to create a message object from raw string input.
@@ -147,18 +154,31 @@ function createUserMessage(userInput) {
  * @returns a string version of this object in [HH:MM:SS] sender_name: message.content form
  */
 function convertMessageToString(message) {
-	const textContent = `[${message.sendTime}] ${message.sender}: ${message.content}`;
+	const { sendTime, sender, content } = message;
+	const textContent = `{gray-fg}[${sendTime}]{/gray-fg} ${sender === username ? chalk.bgGreen(sender) : chalk.bgBlue(sender)}: ${content}`;
 	return textContent;
 }
 
-function createSystemMessage(msg, user) {
-	if (msg === 'CONNECT') {
+function createSystemMessage(msg, args) {
+	if (msg === SystemMessageTypes.USER_CONNECT) {
+		const user = args[0];
 		return `${user} joined the chat.`;
 	}
 
-	if (msg === 'DISCONNECT') {
+	if (msg === SystemMessageTypes.USER_DISCONNECT) {
+		const user = args[0];
 		return `${user} left the chat.`;
 	}
 
+	if (msg === SystemMessageTypes.USER_NAME_CHANGE) {
+		const previousName = args[0];
+		const newName = args[1];
+		return `${previousName} changed their name to ${newName}`;
+	}
+
 	return 'null';
+}
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }

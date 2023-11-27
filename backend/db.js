@@ -12,7 +12,11 @@ async function init() {
 	console.log('Redis initialized.');
 }
 
-await init();
+try {
+	await init();
+} catch (error) {
+	console.log(error);
+}
 
 /**
  * Adds a message to the redis database.
@@ -25,11 +29,15 @@ async function saveMessage(message) {
 }
 
 async function getPreviousMessages(messages_to_receive = 3) {
-	let messages;
+	let messages = [];
 	const message_count = await redis.get('message_counter');
+	if (message_count < 1) return;
 	for (let i = message_count - messages_to_receive + 1; i <= message_count; i++) {
-		messages = await redis.hgetall(`message:${i}`);
+		const msg = await redis.hgetall(`message:${i}`);
+		if (Object.keys(msg).length === 0) continue;
+		messages.push(msg);
 	}
+	// console.log(messages);
 	return messages;
 }
 
