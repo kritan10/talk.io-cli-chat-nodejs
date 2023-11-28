@@ -1,11 +1,11 @@
 import process from 'node:process';
 import blessed from 'blessed';
-import chalk from 'chalk';
+import { LOGIN_PROMPT_STRING, WELCOME_STRING } from './strings.js';
 
 // cli-screen
 const screen = blessed.screen({
 	smartCSR: true,
-	title: 'My Chat App',
+	title: 'talk.io - CLI chat app',
 	cursor: {
 		artificial: true,
 		shape: 'line',
@@ -15,11 +15,11 @@ const screen = blessed.screen({
 });
 
 // messages-output
-const output = blessed.list({
+const output = blessed.box({
 	top: 0,
 	left: 0,
 	width: '100%',
-	height: '80%',
+	height: '800',
 	tags: true,
 	border: {
 		type: 'line',
@@ -28,18 +28,23 @@ const output = blessed.list({
 		border: {
 			fg: '#f0f0f0',
 		},
+		scrollbar: {
+			bg: 'yellow',
+		},
 	},
 	scrollable: true,
-	scrollbar: { style: { bg: 'white' } },
 	alwaysScroll: true,
+	scrollbar: {
+		ch: ' ',
+		inverse: true,
+	},
 });
-
-// text-input
+// text-input/
 const input = blessed.textbox({
 	bottom: 0,
 	left: 0,
 	width: '100%',
-	height: '20%',
+	height: '200',
 	inputOnFocus: true,
 	border: {
 		type: 'line',
@@ -55,8 +60,8 @@ const input = blessed.textbox({
 screen.append(output);
 screen.append(input);
 input.focus();
-const a = chalk.bold.bgBlue('To login, type /login <username>');
-output.addItem(a);
+output.pushLine(LOGIN_PROMPT_STRING);
+
 // Event handler for Ctrl+C to exit the program
 screen.key(['C-c'], () => {
 	return process.exit(0);
@@ -64,14 +69,38 @@ screen.key(['C-c'], () => {
 input.key(['C-c'], () => {
 	return process.exit(0);
 });
-input.ileft;
 
 screen.render();
 
-function refreshScreen(clearInput = true) {
+function clearInput(clearInput = true) {
 	if (clearInput) input.clearValue();
 	input.focus();
 	screen.render();
 }
 
-export { input, output, screen, refreshScreen };
+function focusInput() {
+	screen.focusPop();
+	input.focus();
+}
+
+function clearOutput(removeTitle = false) {
+	output.setContent('');
+	// output.clearItems();
+	if (!removeTitle) {
+		output.pushLine(WELCOME_STRING);
+		output.pushLine('');
+	}
+	screen.render();
+}
+
+function scrollToBottom() {
+	output.scroll(output.getScrollHeight());
+	screen.render();
+}
+
+function addTextAndScrollToBottom(text) {
+	output.pushLine(text);
+	scrollToBottom();
+}
+
+export { input, output, screen, clearInput, clearOutput, focusInput, scrollToBottom, addTextAndScrollToBottom };

@@ -3,7 +3,8 @@ class ChatEvents {
 	static SYSTEM_MESSAGE = 2;
 	static CHAT_INIT = 3;
 	static COMMAND_MESSAGE = 4;
-	static AUTH_MESSAGE = 5;
+	static LOGIN_MESSAGE = 5;
+	static LOGOUT_MESSAGE = 6;
 }
 
 class CommandMessageTypes {

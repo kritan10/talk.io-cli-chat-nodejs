@@ -13,10 +13,12 @@
 	"author": "",
 	"license": "ISC",
 	"dependencies": {
+		"afplay": "^1.0.4",
 		"blessed": "^0.1.81",
 		"chalk": "^4.1.2",
 		"express": "^4.18.2",
 		"ioredis": "^5.3.2",
+		"play-sound": "^1.1.6",
 		"socket.io": "^4.7.2",
 		"socket.io-client": "^4.7.2"
 	}

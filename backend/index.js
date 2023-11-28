@@ -1,8 +1,8 @@
 import express from 'express';
 import { createServer } from 'node:http';
-import { Server, Socket } from 'socket.io';
+import { Server } from 'socket.io';
 import { getPreviousMessages, saveMessage } from './db.js';
-import { AuthMessageTypes, ChatEvents, CommandMessageTypes, SystemMessageTypes } from '../events/ChatEvents.js';
+import { ChatEvents, CommandMessageTypes, SystemMessageTypes } from '../events/ChatEvents.js';
 
 const app = express();
 const server = createServer(app);
@@ -11,8 +11,6 @@ const io = new Server(server);
 let users = [];
 
 io.on('connection', async (socket) => {
-	let username;
-
 	socket.on(ChatEvents.USER_MESSAGE, async (message, ackcb) => {
 		try {
 			await saveMessage(message);
@@ -24,7 +22,7 @@ io.on('connection', async (socket) => {
 	});
 
 	socket.on(ChatEvents.CHAT_INIT, async ({ username }, ackcb) => {
-		console.log(username);
+		socket.emit(ChatEvents.CHAT_INIT);
 		const prevMessages = await getPreviousMessages(5);
 		prevMessages.forEach((message) => {
 			socket.emit(ChatEvents.USER_MESSAGE, message);
@@ -40,27 +38,31 @@ io.on('connection', async (socket) => {
 		ackcb();
 	});
 
-	socket.on(ChatEvents.AUTH_MESSAGE, (message, username, ackcb) => {
-		if (message === AuthMessageTypes.LOGIN) {
-			const isUserExist = users.find((user) => user.username === username);
-			if (isUserExist) {
-				socket.emit(ChatEvents.AUTH_MESSAGE, false);
-				ackcb();
-				return;
-			}
-			users.push({ username: username, id: socket.id });
-			console.log(`USERS: ${users[0]}`);
-			socket.emit(ChatEvents.AUTH_MESSAGE, true, username);
+	socket.on(ChatEvents.LOGIN_MESSAGE, (username, ackcb) => {
+		const isUserExist = users.find((user) => user.username === username || user.id === socket.id);
+		if (isUserExist) {
+			socket.emit(ChatEvents.LOGIN_MESSAGE, false, null);
+			return ackcb();
 		}
+		users.push({ username: username, id: socket.id });
+		console.log(`USERS: ${users[0]}`);
+		socket.emit(ChatEvents.LOGIN_MESSAGE, true, username);
+		ackcb();
+	});
 
+	socket.on(ChatEvents.LOGOUT_MESSAGE, (ackcb) => {
+		const user = users.find((user) => user.id === socket.id);
+		users = users.filter((user) => user.id !== socket.id);
+		console.log(users);
+		if (user) io.emit(ChatEvents.SYSTEM_MESSAGE, SystemMessageTypes.USER_DISCONNECT, [user.username]);
 		ackcb();
 	});
 
 	socket.on('disconnect', () => {
 		const user = users.find((user) => user.id === socket.id);
 		users = users.filter((user) => user.id !== socket.id);
-		console.log(`USERS: ${users}`);
-		io.emit(ChatEvents.SYSTEM_MESSAGE, SystemMessageTypes.USER_DISCONNECT, [user.username]);
+		// console.log(users);
+		if (user) io.emit(ChatEvents.SYSTEM_MESSAGE, SystemMessageTypes.USER_DISCONNECT, [user.username]);
 	});
 
 	logIncomingAndOutgoingEvents(socket, true);
