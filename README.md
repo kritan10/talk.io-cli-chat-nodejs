@@ -20,23 +20,23 @@ talk.io is a command-line chat application built using socket.io and blessed.
 ### Instructions to run
 
 ##### For backend
-Start a redis server at default port.
-From the root working directory:
+- Start a redis server at default port.
+- From the root working directory:
 ```sh
 npm run server
 ```
 
 ##### For client
-From the root working directory:
+- From the root working directory:
 ```sh
 npm run client
 ```
 
 ##### Using the client
 ###### Available commands:
-`/login <username>` - log in with given username
-`/clear` - clear the chat
-`/logout` -  log out
-`/exit` - exit the app
+- `/login <username>` : log in with given username
+- `/clear` : clear the chat
+- `/logout` :  log out
+- `/exit` : exit the app
 
 
